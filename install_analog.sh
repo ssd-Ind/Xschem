@@ -3,7 +3,9 @@ sudo apt install git
 sudo apt-get update -y
 sudo apt install libx11-dev libxrender1 libxrender-dev libxcb1 tcl8.6 \
                  libx11-xcb-dev libcairo2 libcairo2-dev tcl8.6-dev tk8.6 \
-                 tk8.6-dev flex bison libxpm4 libxpm-dev gawk mawk
+                 tk8.6-dev flex bison libxpm4 libxpm-dev gawk mawk automake \
+                 libtool build-essential gperf libxml2 libxml2-dev libxml-libxml-perl \
+                 libgd-perl libxaw7-dev libreadline6-dev vim-gtk3
 cd
 git clone https://github.com/StefanSchippers/xschem.git
 cd xschem
@@ -38,4 +40,22 @@ cd libraries
 cp -a sky130_fd_pr sky130_fd_pr_ngspice
 cd sky130_fd_pr_ngspice/latest
 patch -p2 < ~/.xschem/xschem_library/xschem_sky130/sky130_fd_pr.patch
+cd
 git clone https://git.code.sf.net/p/ngspice/ngspice ngspice
+cd ngspice
+git checkout pre-master
+./autogen.sh
+mkdir release
+cd release
+../configure --with-x --enable-xspice --disable-debug --enable-cider --with-readline=yes --enable-openmp
+make -j4
+sudo make install
+cd
+# cd .xschem/simulations
+# vi .spiceinit
+# set ngbehavior=hs
+# Press i
+# :wq
+# cd
+cd .xschem/xschem_library/xschem_sky130
+xschem &
