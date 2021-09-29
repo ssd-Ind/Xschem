@@ -18,6 +18,10 @@ cd xschem_library
 git clone https://github.com/StefanSchippers/xschem_sky130.git xschem_sky130
 xschem &
 cd
+mkdir projects
+cd projects
+mkdir foundry
+cd foundry
 git clone https://github.com/google/skywater-pdk
 cd skywater-pdk
 git submodule init libraries/sky130_fd_io/latest
@@ -30,3 +34,8 @@ git submodule init libraries/sky130_fd_sc_ms/latest
 git submodule init libraries/sky130_fd_sc_ls/latest
 git submodule init libraries/sky130_fd_sc_lp/latest
 git submodule update
+cd libraries
+cp -a sky130_fd_pr sky130_fd_pr_ngspice
+cd sky130_fd_pr_ngspice/latest
+patch -p2 < ~/.xschem/xschem_library/xschem_sky130/sky130_fd_pr.patch
+git clone https://git.code.sf.net/p/ngspice/ngspice ngspice
