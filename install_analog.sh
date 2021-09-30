@@ -13,12 +13,16 @@ cd xschem
 make -j4
 sudo make install
 xschem &
+
+
 cd
 cd .xschem
 mkdir xschem_library
 cd xschem_library
 git clone https://github.com/StefanSchippers/xschem_sky130.git xschem_sky130
 xschem &
+
+
 cd
 mkdir projects
 cd projects
@@ -59,3 +63,5 @@ cd
 # cd
 cd .xschem/xschem_library/xschem_sky130
 xschem &
+
+
