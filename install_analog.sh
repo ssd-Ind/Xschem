@@ -60,5 +60,6 @@ cd hspiceinit
 cp .spiceinit ~/.xschem/simulations
 cp xschemrc ~/.xschem/xschem_library/xschem_sky130
 cd
+rm -rf hspiceinit
 cd .xschem/xschem_library/xschem_sky130
 xschem &
