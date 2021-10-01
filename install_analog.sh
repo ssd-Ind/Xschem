@@ -61,6 +61,10 @@ cd
 # Press i
 # :wq
 # cd
+git clone https://github.com/ssd-Ind/Xschem.git hspiceinit
+cd hspiceinit
+cp .spiceinit ~/.xschem/simulations
+cd
 cd .xschem/xschem_library/xschem_sky130
 xschem &
 
