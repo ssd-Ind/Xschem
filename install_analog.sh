@@ -24,8 +24,6 @@ xschem &
 
 cd
 cd
-mkdir projects
-cd projects
 mkdir foundry
 cd foundry
 git clone https://github.com/google/skywater-pdk
