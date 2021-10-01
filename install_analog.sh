@@ -12,7 +12,7 @@ cd xschem
 ./configure
 make -j4
 sudo make install
-xschem
+xschem &
 
 cd
 cd
@@ -20,7 +20,7 @@ cd .xschem
 mkdir xschem_library
 cd xschem_library
 git clone https://github.com/StefanSchippers/xschem_sky130.git xschem_sky130
-xschem
+xschem &
 
 cd
 cd
