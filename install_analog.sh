@@ -1,77 +1,292 @@
-sudo apt update
-sudo apt install git --assume-yes
-sudo apt-get update -y
-sudo apt install libx11-dev libxrender1 libxrender-dev libxcb1 tcl8.6 \
-                 libx11-xcb-dev libcairo2 libcairo2-dev tcl8.6-dev tk8.6 \
-                 tk8.6-dev flex bison libxpm4 libxpm-dev gawk mawk automake \
-                 libtool build-essential gperf libxml2 libxml2-dev libxml-libxml-perl \
-                 libgd-perl libxaw7-dev libreadline6-dev vim-gtk3 xterm --assume-yes
+#!/bin/bash
+# =============================================================================
+# install_analog.sh
+# Open-Source Analog EDA Stack Installer
+#
+# Installs: Xschem + Sky130 PDK + ngspice + Magic VLSI
+# Target:   Ubuntu 22.04 / Debian-based systems
+#
+# Usage:
+#   chmod +x install_analog.sh
+#   ./install_analog.sh            # full install
+#   ./install_analog.sh --help     # show options
+# =============================================================================
 
-cd
-mkdir .xschem
-git clone https://github.com/StefanSchippers/xschem.git
-cd xschem
-./configure
-make -j4
-sudo make install
-xschem &
+set -e
+set -o pipefail
 
-cd
-cd
-cd ~/.xschem
-mkdir xschem_library
-cd xschem_library
-git clone https://github.com/StefanSchippers/xschem_sky130.git xschem_sky130
-xschem &
+# ── Configurable paths ────────────────────────────────────────────────────────
+# No version pins — all tools track their latest stable release at install time
+INSTALL_DIR="$HOME/eda"           # root directory for all clones
+XSCHEM_SIMDIR="$HOME/.xschem/simulations"
+XSCHEM_LIBDIR="$HOME/.xschem/xschem_library"
+FOUNDRY_DIR="$INSTALL_DIR/foundry"
 
-cd
-cd
-mkdir foundry
-cd foundry
-git clone https://github.com/google/skywater-pdk
-cd skywater-pdk
-git submodule init libraries/sky130_fd_io/latest
-git submodule init libraries/sky130_fd_pr/latest
-git submodule init libraries/sky130_fd_sc_hd/latest
-git submodule init libraries/sky130_fd_sc_hvl/latest
-git submodule init libraries/sky130_fd_sc_hdll/latest
-git submodule init libraries/sky130_fd_sc_hs/latest
-git submodule init libraries/sky130_fd_sc_ms/latest
-git submodule init libraries/sky130_fd_sc_ls/latest
-git submodule init libraries/sky130_fd_sc_lp/latest
-git submodule update
-cd libraries
-cp -a sky130_fd_pr sky130_fd_pr_ngspice
-cd sky130_fd_pr_ngspice/latest
-patch -p2 < ~/.xschem/xschem_library/xschem_sky130/sky130_fd_pr.patch
-cd
-git clone https://git.code.sf.net/p/ngspice/ngspice ngspice
-cd ngspice
-git checkout pre-master
-./autogen.sh
-mkdir release
-cd release
-../configure --with-x --enable-xspice --disable-debug --enable-cider --with-readline=yes --enable-openmp
-make -j4
-sudo make install
-cd
-git clone https://github.com/ssd-Ind/Xschem.git hspiceinit
-cd hspiceinit
-cp .spiceinit ~/.xschem/simulations
-cp xschemrc ~/.xschem/xschem_library/xschem_sky130
-cd
-rm -rf hspiceinit
-cd .xschem/xschem_library/xschem_sky130
-xschem &
+# Sky130 submodule libraries to init (comment out ones you don't need)
+SKY130_LIBS=(
+    "libraries/sky130_fd_io/latest"
+    "libraries/sky130_fd_pr/latest"
+    "libraries/sky130_fd_sc_hd/latest"
+    "libraries/sky130_fd_sc_hvl/latest"
+    "libraries/sky130_fd_sc_hdll/latest"
+    "libraries/sky130_fd_sc_hs/latest"
+    "libraries/sky130_fd_sc_ms/latest"
+    "libraries/sky130_fd_sc_ls/latest"
+    "libraries/sky130_fd_sc_lp/latest"
+)
 
-cd
-cd
-sudo apt-get install m4 tcl-dev tk-dev blt freeglut3 freeglut3-dev libgl1-mesa-dev libglu1-mesa-dev --assume-yes
-cd
-git clone https://github.com/RTimothyEdwards/magic magic
-cd magic
-./configure
-sudo make
-sudo make install
-cd
-magic &
+# ── Colour helpers ─────────────────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
+
+info()    { echo -e "${CYAN}[INFO]${RESET}  $*"; }
+success() { echo -e "${GREEN}[OK]${RESET}    $*"; }
+warn()    { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
+error()   { echo -e "${RED}[ERROR]${RESET} $*" >&2; exit 1; }
+banner()  { echo -e "\n${BOLD}${CYAN}══════════════════════════════════════════${RESET}"; \
+            echo -e "${BOLD}  $*${RESET}"; \
+            echo -e "${BOLD}${CYAN}══════════════════════════════════════════${RESET}"; }
+
+# ── Usage ─────────────────────────────────────────────────────────────────────
+usage() {
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  --skip-deps      Skip apt dependency installation"
+    echo "  --skip-xschem    Skip Xschem build"
+    echo "  --skip-pdk       Skip Sky130 PDK clone"
+    echo "  --skip-ngspice   Skip ngspice build"
+    echo "  --skip-magic     Skip Magic VLSI build"
+    echo "  --help           Show this help"
+    echo ""
+    echo "Install root: $INSTALL_DIR"
+}
+
+# ── Parse args ─────────────────────────────────────────────────────────────────
+SKIP_DEPS=0; SKIP_XSCHEM=0; SKIP_PDK=0; SKIP_NGSPICE=0; SKIP_MAGIC=0
+
+for arg in "$@"; do
+    case $arg in
+        --skip-deps)    SKIP_DEPS=1 ;;
+        --skip-xschem)  SKIP_XSCHEM=1 ;;
+        --skip-pdk)     SKIP_PDK=1 ;;
+        --skip-ngspice) SKIP_NGSPICE=1 ;;
+        --skip-magic)   SKIP_MAGIC=1 ;;
+        --help)         usage; exit 0 ;;
+        *) warn "Unknown option: $arg"; usage; exit 1 ;;
+    esac
+done
+
+# ── Idempotent git clone ───────────────────────────────────────────────────────
+# Usage: safe_clone <url> <dest_dir>
+safe_clone() {
+    local url="$1"
+    local dest="$2"
+    if [ -d "$dest/.git" ]; then
+        info "Already cloned: $dest — pulling latest"
+        git -C "$dest" pull --ff-only || warn "Pull failed (skipping, using existing clone)"
+    else
+        info "Cloning $url → $dest"
+        git clone "$url" "$dest"
+    fi
+}
+
+# ── 1. System dependencies ─────────────────────────────────────────────────────
+install_deps() {
+    banner "Step 1 — System Dependencies"
+    sudo apt-get update -y
+    sudo apt-get install -y \
+        git curl wget \
+        libx11-dev libxrender1 libxrender-dev \
+        libxcb1 libx11-xcb-dev \
+        libcairo2 libcairo2-dev \
+        tcl8.6 tcl8.6-dev tk8.6 tk8.6-dev \
+        flex bison \
+        libxpm4 libxpm-dev \
+        libxaw7-dev \
+        libreadline-dev \
+        gawk mawk automake libtool \
+        build-essential gperf \
+        libxml2 libxml2-dev \
+        libxml-libxml-perl libgd-perl \
+        vim-gtk3 xterm \
+        m4 blt \
+        freeglut3 freeglut3-dev \
+        libgl1-mesa-dev libglu1-mesa-dev \
+        --no-install-recommends
+    success "System dependencies installed"
+}
+
+# ── 2. Xschem ─────────────────────────────────────────────────────────────────
+install_xschem() {
+    banner "Step 2 — Xschem Schematic Editor"
+    mkdir -p "$INSTALL_DIR"
+    safe_clone "https://github.com/StefanSchippers/xschem.git" "$INSTALL_DIR/xschem"
+
+    cd "$INSTALL_DIR/xschem"
+    ./configure --prefix=/usr/local
+    make -j"$(nproc)"
+    sudo make install
+
+    # Create ~/.xschem directory structure
+    mkdir -p "$XSCHEM_SIMDIR"
+    mkdir -p "$XSCHEM_LIBDIR"
+
+    success "Xschem installed → $(which xschem)"
+    cd "$HOME"
+}
+
+# ── 3. Sky130 PDK + xschem_sky130 symbols ─────────────────────────────────────
+install_pdk() {
+    banner "Step 3 — Sky130 PDK + Symbol Library"
+    mkdir -p "$FOUNDRY_DIR"
+
+    # xschem_sky130 symbols
+    safe_clone "https://github.com/StefanSchippers/xschem_sky130.git" \
+               "$XSCHEM_LIBDIR/xschem_sky130"
+
+    # skywater-pdk spice models
+    safe_clone "https://github.com/google/skywater-pdk" \
+               "$FOUNDRY_DIR/skywater-pdk"
+
+    cd "$FOUNDRY_DIR/skywater-pdk"
+
+    info "Initialising Sky130 submodule libraries..."
+    for lib in "${SKY130_LIBS[@]}"; do
+        git submodule init "$lib"
+    done
+    git submodule update --jobs "$(nproc)"
+
+    # Patch sky130_fd_pr for ngspice nf parameter ordering
+    local pr_src="$FOUNDRY_DIR/skywater-pdk/libraries/sky130_fd_pr/latest"
+    local pr_ng="$FOUNDRY_DIR/skywater-pdk/libraries/sky130_fd_pr_ngspice/latest"
+    local patch_file="$XSCHEM_LIBDIR/xschem_sky130/sky130_fd_pr.patch"
+
+    if [ ! -d "$FOUNDRY_DIR/skywater-pdk/libraries/sky130_fd_pr_ngspice" ]; then
+        info "Creating patched sky130_fd_pr_ngspice..."
+        cp -a "$FOUNDRY_DIR/skywater-pdk/libraries/sky130_fd_pr" \
+              "$FOUNDRY_DIR/skywater-pdk/libraries/sky130_fd_pr_ngspice"
+        cd "$pr_ng"
+        patch -p2 < "$patch_file"
+    else
+        info "sky130_fd_pr_ngspice already exists — skipping patch"
+    fi
+
+    # Copy .spiceinit (from this repo's copy if present, else write a default)
+    local spiceinit_dst="$XSCHEM_SIMDIR/.spiceinit"
+    if [ -f "$(dirname "$0")/.spiceinit" ]; then
+        cp "$(dirname "$0")/.spiceinit" "$spiceinit_dst"
+        info "Copied .spiceinit from repo"
+    elif [ ! -f "$spiceinit_dst" ]; then
+        info "Writing default .spiceinit"
+        cat > "$spiceinit_dst" << 'EOF'
+* Speed up ngspice startup for Sky130
+set ngbehavior=hsa
+set skywaterpdk
+EOF
+    fi
+
+    # Copy xschemrc into xschem_sky130 directory
+    local xschemrc_src="$(dirname "$0")/xschemrc"
+    if [ -f "$xschemrc_src" ]; then
+        cp "$xschemrc_src" "$XSCHEM_LIBDIR/xschem_sky130/xschemrc"
+        info "Copied xschemrc from repo"
+    fi
+
+    success "Sky130 PDK and symbols ready"
+    cd "$HOME"
+}
+
+# ── 4. ngspice ────────────────────────────────────────────────────────────────
+install_ngspice() {
+    banner "Step 4 — ngspice Simulator (latest stable)"
+    safe_clone "https://git.code.sf.net/p/ngspice/ngspice" "$INSTALL_DIR/ngspice"
+
+    cd "$INSTALL_DIR/ngspice"
+    git fetch --tags
+
+    # Auto-resolve the highest ngspice-NN tag (e.g. ngspice-44)
+    local latest_tag
+    latest_tag=$(git tag --list 'ngspice-[0-9]*' | sort -t- -k2 -n | tail -1)
+    [ -z "$latest_tag" ] && error "Could not resolve any ngspice-NN tag from the repo"
+    info "Using latest ngspice tag: $latest_tag"
+    git checkout "$latest_tag"
+
+    ./autogen.sh
+
+    # Build in a clean release subdirectory
+    mkdir -p release
+    cd release
+
+    ../configure \
+        --prefix=/usr/local \
+        --with-x \
+        --enable-xspice \
+        --disable-debug \
+        --enable-cider \
+        --with-readline=yes \
+        --enable-openmp
+
+    make -j"$(nproc)"
+    sudo make install
+
+    success "ngspice installed → $(which ngspice)"
+    cd "$HOME"
+}
+
+# ── 5. Magic VLSI ─────────────────────────────────────────────────────────────
+install_magic() {
+    banner "Step 5 — Magic VLSI Layout Tool"
+    safe_clone "https://github.com/RTimothyEdwards/magic" "$INSTALL_DIR/magic"
+
+    cd "$INSTALL_DIR/magic"
+    ./configure --prefix=/usr/local
+    make -j"$(nproc)"
+    sudo make install
+
+    success "Magic installed → $(which magic)"
+    cd "$HOME"
+}
+
+# ── Final summary ──────────────────────────────────────────────────────────────
+print_summary() {
+    banner "Installation Complete"
+    echo ""
+    echo -e "  ${BOLD}Tool versions:${RESET}"
+    command -v xschem  &>/dev/null && echo -e "  ${GREEN}✔${RESET}  xschem  : $(xschem --version 2>&1 | head -1)"
+    command -v ngspice &>/dev/null && echo -e "  ${GREEN}✔${RESET}  ngspice : $(ngspice --version 2>&1 | head -1)"
+    command -v magic   &>/dev/null && echo -e "  ${GREEN}✔${RESET}  magic   : $(magic --version 2>&1 | head -1)"
+    echo ""
+    echo -e "  ${BOLD}Directories:${RESET}"
+    echo -e "  EDA root   : $INSTALL_DIR"
+    echo -e "  Xschem cfg : $HOME/.xschem"
+    echo -e "  PDK        : $FOUNDRY_DIR/skywater-pdk"
+    echo -e "  Symbols    : $XSCHEM_LIBDIR/xschem_sky130"
+    echo ""
+    echo -e "  ${BOLD}To launch:${RESET}"
+    echo -e "  cd $XSCHEM_LIBDIR/xschem_sky130 && xschem"
+    echo ""
+}
+
+# ── Main ───────────────────────────────────────────────────────────────────────
+main() {
+    echo -e "${BOLD}${CYAN}"
+    echo "  ╔══════════════════════════════════════════╗"
+    echo "  ║   Analog EDA Stack Installer             ║"
+    echo "  ║   xschem + sky130 + ngspice + magic      ║"
+    echo "  ╚══════════════════════════════════════════╝"
+    echo -e "${RESET}"
+    info "Install root : $INSTALL_DIR"
+    info "All tools    : latest stable at clone time"
+    echo ""
+
+    [ "$SKIP_DEPS"    -eq 0 ] && install_deps
+    [ "$SKIP_XSCHEM"  -eq 0 ] && install_xschem
+    [ "$SKIP_PDK"     -eq 0 ] && install_pdk
+    [ "$SKIP_NGSPICE" -eq 0 ] && install_ngspice
+    [ "$SKIP_MAGIC"   -eq 0 ] && install_magic
+
+    print_summary
+}
+
+main
