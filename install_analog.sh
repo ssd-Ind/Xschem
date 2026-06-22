@@ -95,26 +95,55 @@ safe_clone() {
 install_deps() {
     banner "Step 1 — System Dependencies"
     sudo apt-get update -y
+
+    # Core packages — available on all supported Ubuntu/Debian versions
     sudo apt-get install -y \
         git curl wget \
         libx11-dev libxrender1 libxrender-dev \
         libxcb1 libx11-xcb-dev \
         libcairo2 libcairo2-dev \
-        tcl8.6 tcl8.6-dev tk8.6 tk8.6-dev \
         flex bison \
         libxpm4 libxpm-dev \
         libxaw7-dev \
         libreadline-dev \
-        gawk mawk automake libtool \
+        gawk mawk automake libtool autoconf \
         build-essential gperf \
-        libxml2 libxml2-dev \
+        libxml2-dev \
         libxml-libxml-perl libgd-perl \
-        vim-gtk3 xterm \
-        m4 blt \
-        freeglut3 freeglut3-dev \
+        xterm \
+        m4 \
         libgl1-mesa-dev libglu1-mesa-dev \
         --no-install-recommends
+
+    # TCL/TK — versioned packages exist on 22.04/24.04; unversioned on 25.04+
+    install_if_available tcl8.6 tcl8.6-dev tk8.6 tk8.6-dev \
+        || sudo apt-get install -y tcl tcl-dev tk tk-dev
+
+    # vim-gtk3 — may be vim-gtk3 or just vim on minimal installs
+    install_if_available vim-gtk3 || sudo apt-get install -y vim
+
+    # blt — Tk extension; may not exist on 25.04 repos
+    install_if_available blt || warn "blt not available — skipping (non-critical)"
+
+    # freeglut: split into libglut-dev on newer Ubuntu (25.04+)
+    install_if_available freeglut3 freeglut3-dev \
+        || sudo apt-get install -y libglut-dev \
+        || warn "freeglut not found — Magic 3D features may be limited"
+
     success "System dependencies installed"
+}
+
+# Install packages only if they exist in the apt cache; return 1 if any are missing
+install_if_available() {
+    local missing=()
+    for pkg in "$@"; do
+        apt-cache show "$pkg" &>/dev/null || missing+=("$pkg")
+    done
+    if [ ${#missing[@]} -gt 0 ]; then
+        warn "Packages not found in apt cache: ${missing[*]}"
+        return 1
+    fi
+    sudo apt-get install -y "$@"
 }
 
 # ── 2. Xschem ─────────────────────────────────────────────────────────────────
