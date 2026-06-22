@@ -269,12 +269,46 @@ install_magic() {
     safe_clone "https://github.com/RTimothyEdwards/magic" "$INSTALL_DIR/magic"
 
     cd "$INSTALL_DIR/magic"
+
+    # GCC 14+ (Ubuntu 25.04+) changed empty-parameter-list declarations from
+    # warnings to hard errors. Magic's legacy C headers use this pattern heavily.
+    # -std=gnu17 + Wno-error flags suppress the errors without breaking the build.
+    local gcc_ver
+    gcc_ver=$(gcc -dumpversion | cut -d. -f1)
+    if [ "$gcc_ver" -ge 14 ]; then
+        info "GCC $gcc_ver detected — applying legacy C compatibility flags for Magic"
+        export CFLAGS="-g -std=gnu17 -Wno-error=implicit-function-declaration -Wno-error=implicit-int -Wno-error=incompatible-pointer-types"
+    fi
+
     ./configure --prefix=/usr/local
     make -j"$(nproc)"
     sudo make install
+    unset CFLAGS
 
     success "Magic installed → $(which magic)"
     cd "$HOME"
+}
+
+
+# ── 6. Launch wrapper ──────────────────────────────────────────────────────────
+install_launcher() {
+    banner "Step 6 — Install xschem-sky130 launcher"
+
+    cat > /tmp/xschem-sky130 << EOF
+#!/bin/bash
+# Launch xschem from the correct Sky130 working directory so xschemrc is found
+XSCHEM_SKY130="$HOME/.xschem/xschem_library/xschem_sky130"
+if [ ! -d "\$XSCHEM_SKY130" ]; then
+    echo "ERROR: \$XSCHEM_SKY130 not found. Run install_analog.sh first."
+    exit 1
+fi
+echo "Launching xschem from \$XSCHEM_SKY130"
+cd "\$XSCHEM_SKY130" && exec xschem "\$@"
+EOF
+
+    chmod +x /tmp/xschem-sky130
+    sudo mv /tmp/xschem-sky130 /usr/local/bin/xschem-sky130
+    success "Launcher installed → type 'xschem-sky130' from anywhere to launch"
 }
 
 # ── Final summary ──────────────────────────────────────────────────────────────
@@ -293,7 +327,7 @@ print_summary() {
     echo -e "  Symbols    : $XSCHEM_LIBDIR/xschem_sky130"
     echo ""
     echo -e "  ${BOLD}To launch:${RESET}"
-    echo -e "  cd $XSCHEM_LIBDIR/xschem_sky130 && xschem"
+    echo -e "  xschem-sky130          (from anywhere)"
     echo ""
 }
 
@@ -314,6 +348,7 @@ main() {
     [ "$SKIP_PDK"     -eq 0 ] && install_pdk
     [ "$SKIP_NGSPICE" -eq 0 ] && install_ngspice
     [ "$SKIP_MAGIC"   -eq 0 ] && install_magic
+    install_launcher
 
     print_summary
 }
